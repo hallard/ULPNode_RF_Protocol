@@ -11,13 +11,15 @@
 //	Released into the public domain.
 //
 // **********************************************************************************
-// 
+//
 // This linked list source code is not really used in RF protocol but it's just there
-// because gateway could needs it, and since gateway can be implemented on several 
-// hardware (ESP8266, Particle, Linux, Rpi, Arduino....) the common place could be with 
+// because gateway could needs it, and since gateway can be implemented on several
+// hardware (ESP8266, Particle, Linux, Rpi, Arduino....) the common place could be with
 // the RF protocol definition files
-// 
-#ifndef SPARK
+//
+// History : V1.00 2014-07-14 - First release
+//         : V1.10 2015-09-03 - Added Particle Photon/Core targets, removed compile warning
+//
 
 #ifndef LinkedList_h
 #define LinkedList_h
@@ -199,7 +201,7 @@ bool LinkedList<T>::add(T _t){
 	ListNode<T> *tmp = new ListNode<T>();
 	tmp->data = _t;
 	tmp->next = NULL;
-	
+
 	if(root){
 		// Already have elements inserted
 		last->next = tmp;
@@ -226,10 +228,10 @@ bool LinkedList<T>::unshift(T _t){
 	tmp->next = root;
 	tmp->data = _t;
 	root = tmp;
-	
+
 	_size++;
 	isCached = false;
-	
+
 	return true;
 }
 
@@ -247,7 +249,7 @@ template<typename T>
 T LinkedList<T>::pop(){
 	if(_size <= 0)
 		return T();
-	
+
 	isCached = false;
 
 	if(_size >= 2){
@@ -299,7 +301,7 @@ T LinkedList<T>::remove(int index){
 
 	if(index == 0)
 		return shift();
-	
+
 	if (index == _size-1)
 	{
 		return pop();
@@ -329,5 +331,4 @@ void LinkedList<T>::clear(){
 		shift();
 }
 
-#endif
 #endif

@@ -5,18 +5,22 @@
 // You are free to use/extend this library but please abide with the CC-BY-SA license:
 // http://creativecommons.org/licenses/by-sa/4.0/
 //
-// For any explanation of ULPNode see 
+// For any explanation of ULPNode see
 // https://hallard.me/category/ulpnode/
 //
 // Written by Charles-Henri Hallard (http://hallard.me)
 //
 // History : V1.00 2014-07-14 - First release
+//         : V1.10 2015-09-03 - Added Particle Photon/Core targets
 //
 // All text above must be included in any redistribution.
 //
 // **********************************************************************************
-#include <arduino.h>
 #include "ULPNode_RF_Protocol.h"
+
+#ifdef ARDUINO
+#include <arduino.h>
+#endif
 
 #ifdef SPARK
 const char * rf_frame[] = {
@@ -24,8 +28,8 @@ const char * rf_frame[] = {
 const char * const rf_frame[] PROGMEM = {
 #endif
     // Payload command code (14 total) "x" are free
-    "UNKNOWN",    "ALIVE",      "PING",       "PINGBACK", 
-    "OTA_CONFIG", "OTA_UPDATE", "OTA_AUTOID", "SYS_END",
+    "UNKNOWN",    "ALIVE",      "PING",       "PINGBACK",
+    "OTA_CONFIG", "OTA_UPDATE", "DHCP",       "SYS_END",
     "8",          "9",          "A",          "B",
     "C",          "D",          "E",          "F" ,
     // Payload DATA code (14 total) "x" are free
@@ -41,16 +45,104 @@ const char * rf_data[] = {
 #else
 const char * const rf_data[] PROGMEM = {
 #endif
-    "SYS00","SYS01","TEMP", "HUM", 
-    "LUX",  "CO2",  "RSSI", "VOLT", 
+    "SYS00","SYS01","TEMP", "HUM",
+    "LUX",  "CO2",  "RSSI", "VOLT",
     "BAT",  "COUNT", "ERR", "ERR"
   };
 */
 // Buffer used to decode specific data value
-char pbuf[24]; 
+char pbuf[24];
 
 // Buffer containing JSON data string to return
-char json_str[128]; 
+char json_str[128];
+
+/* ======================================================================
+Function: ftoa
+Purpose : convert float value to string
+Input   : float
+          buffer to put result
+          number of precision digits
+Output  : string len
+Comments: Author : TRAMPAS STERN
+          this code was found on the web and modified to actually work.
+          for now needed by cloud compile of photon, does not support
+          float printf nor dtostrf, amazing !!!
+====================================================================== */
+int ftoa(float x, char *str, char prec)
+{
+  int k;
+  int8_t ie, i, ndig;
+  char *start = str;
+
+  // Based on precision, set the number of digits.
+  ndig = prec + 1;
+
+  if(prec > 12)
+    ndig = 13;
+
+  ie = 0;
+
+  // If x is negative, write minus sign and reverse.
+  if(x < 0)  {
+    *str++ = '-';
+    x = -x;
+  }
+
+  // If (x < 0.0) then increment by 10 until between 1.0 and 10.0.
+  if(x != 0.0) {
+    while (x < 1.0) {
+      x =x* 10.0;
+      ie--;
+    }
+  }
+
+  // If x > 10 then let's shift it down.
+  while(x >= 10.0) {
+    x = x * (1.0/10.0);
+    ie++;
+  }
+
+  // In f format, the number of digits is related to size.
+  ndig = ndig + ie;
+
+  if(prec == 0 && (ie > ndig) )
+   ndig=ie;
+
+  // Check and see if the number is less than 1.0
+  if(ie<0) {
+    *str++ = '0';
+
+    if(prec!=0)
+      *str++ = '.';
+
+    if(ndig < 0)
+      ie = ie-ndig;  // Limit zeros if underflow
+
+    for(i = -1; i > ie; i--)
+      *str++ = '0';
+  }
+
+    // For each digit.
+  for(i=0; i < ndig; i++) {
+    float b;
+    k = x;             // k = most significant digit
+    *str++ = k + '0';  // Output the char representation
+
+    if( i==ie && prec!=0)
+      *str++ = '.';   // Output a decimal point
+
+    b = (float)k;
+
+    // Multiply by 10 before subtraction to remove
+    // errors from limited number of bits in float.
+    b = b*10.0;
+    x = x*10.0;
+    x = x - b;      // Subtract k from x
+  }
+
+  *str++ = '\0';
+  return (str - start);  // Return string length
+}
 
 /* ======================================================================
 Function: decode_bat
@@ -61,7 +153,14 @@ Input   : battery (mV)
 char * decode_bat(uint16_t bat, char * index)
 {
   sprintf_P(pbuf, PSTR("\"bat%s\":"), index);
-  dtostrf(bat/1000.0f, 5, 3, pbuf+strlen(pbuf));
+
+  #ifdef ARDUINO
+    dtostrf(bat/1000.0f, 5, 3, pbuf+strlen(pbuf));
+  #else
+    ftoa(bat/1000.0f, pbuf+strlen(pbuf), 3 );
+    //sprintf(pbuf, "\"bat%s\":%.3f", index, bat/1000.0f );
+  #endif
+
   return pbuf;
 }
 
@@ -86,7 +185,12 @@ char * decode_volt(uint16_t volt, char * index)
 {
   // convert voltage to V format xx.yyy
   sprintf_P(pbuf, PSTR("\"volt%s\":%s"), index);
-  dtostrf(volt/1000.0f, 5, 3, pbuf+strlen(pbuf));
+  #ifdef ARDUINO
+    dtostrf(volt/1000.0f, 5, 3, pbuf+strlen(pbuf));
+  #else
+    ftoa(volt/1000.0f, pbuf+strlen(pbuf), 3 );
+  #endif
+
   return pbuf;
 }
 
@@ -98,8 +202,14 @@ Input   : temp (*100)
 ====================================================================== */
 char * decode_temp(int16_t temp, char * index)
 {
+  // convert temperature to format xx.yy
   sprintf_P(pbuf, PSTR("\"temp%s\":"), index);
-  dtostrf(temp/100.0f, 4, 2,  pbuf+strlen(pbuf));
+  #ifdef ARDUINO
+    dtostrf(temp/100.0f, 4, 2,  pbuf+strlen(pbuf));
+  #else
+    ftoa(temp/100.0f, pbuf+strlen(pbuf), 2 );
+  #endif
+
   return pbuf;
 }
 
@@ -112,7 +222,11 @@ Input   : humidity (*10)
 char * decode_hum(uint16_t hum, char * index)
 {
   sprintf_P(pbuf, PSTR("\"hum%s\":%d"), index, hum);
-  dtostrf(hum/10.0f, 4, 1,  pbuf+strlen(pbuf));
+  #ifdef ARDUINO
+    dtostrf(hum/10.0f, 4, 1,  pbuf+strlen(pbuf));
+  #else
+    ftoa(hum/10.0f, pbuf+strlen(pbuf), 1 );
+  #endif
   return pbuf;
 }
 
@@ -125,7 +239,11 @@ Input   : lux (*10)
 char * decode_lux(uint16_t lux, char * index)
 {
   sprintf_P(pbuf, PSTR("\"lux%s\":"), index);
-  dtostrf(lux/10.0f, 3, 1,  pbuf+strlen(pbuf));
+  #ifdef ARDUINO
+    dtostrf(lux/10.0f, 3, 1,  pbuf+strlen(pbuf));
+  #else
+    ftoa(lux/10.0f, pbuf+strlen(pbuf), 1 );
+  #endif
   return pbuf;
 }
 
@@ -171,7 +289,7 @@ Purpose : print a digital IO value
 Input   : Digital IO value
           digital pin (0 to 16)
 ====================================================================== */
-char * decode_digital_io(uint8_t value, char * pin)
+char * decode_digital_io(uint8_t value, uint8_t pin)
 {
   sprintf_P(pbuf, PSTR("\"d%d\":%d"), pin, value);
   return pbuf;
@@ -180,10 +298,10 @@ char * decode_digital_io(uint8_t value, char * pin)
 /* ======================================================================
 Function: decode_analog_io
 Purpose : print a analog IO value
-Input   : analog value 
+Input   : analog value
           analog pin (0 to 7)
 ====================================================================== */
-char * decode_analog_io(uint16_t value, char * pin)
+char * decode_analog_io(uint16_t value, uint8_t pin)
 {
   sprintf_P(pbuf, PSTR("\"a%d\":%ld"), pin, value);
   return pbuf;
@@ -256,15 +374,12 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
 
   // this is for known packet command
   // Alive packet ?
-  if ( c==RF_PL_ALIVE && len==sizeof(RFAlivePayload))
-  {
+  if ( c==RF_PL_ALIVE && len==sizeof(RFAlivePayload)) {
     sprintf_P(pbuf, PSTR("\"state\":%04X"), ((RFAlivePayload*)pdat)->status);
     add_json_data(json_str, pbuf);
     add_json_data(json_str, decode_bat(((RFAlivePayload*)pdat)->vbat,""));
-  }
-  // ping/ping back packet ?
-  else if ( (c==RF_PL_PING || c==RF_PL_PINGBACK) && len==sizeof(RFPingPayload))
-  {
+  } else if ( (c==RF_PL_PING || c==RF_PL_PINGBACK) && len==sizeof(RFPingPayload)) {
+    // ping/ping back packet ?
     sprintf_P(pbuf, PSTR("\"state\":%04X"), ((RFAlivePayload*)pdat)->status);
     add_json_data(json_str, pbuf);
     // Vbat is sent only on emiting ping packet, not ping back
@@ -272,19 +387,17 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
       add_json_data(json_str, decode_bat(((RFPingPayload*)pdat)->vbat,""));
 
     // RSSI from other side is sent only in pingback response
-    // this is the 2nd rssi value, we call it myrssi 
-    if (c==RF_PL_PINGBACK)
-    {
+    // this is the 2nd rssi value, we call it myrssi
+    if (c==RF_PL_PINGBACK){
       sprintf_P(pbuf, PSTR("\"myrssi\":%d"), rssi);
       add_json_data(json_str, pbuf);
     }
   }
   // payload Packet with datas
-  // we need at least size of payload > 2 
-  // 1 payload command + 1 sensor type + 1 sensor data) 
+  // we need at least size of payload > 2
+  // 1 payload command + 1 sensor type + 1 sensor data)
   // and is one of our known data code. This is for received data
-  else if ( isPayloadData(c) && len>2)
-  {
+  else if ( isPayloadData(c) && len>2) {
     uint8_t data_size ;
     uint8_t data_type ;
     uint8_t l ;
@@ -297,9 +410,8 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
 
     // Loop through all data contained into the payload
     // discard 1st byte on each, which is header data code
-    do
-    {      
-      // each sensor type can have 4 values sent, 
+    do {
+      // each sensor type can have 4 values sent,
       char str_idx[] = " ";
       data_size = 0;
       pval= NULL;
@@ -314,67 +426,58 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
 
       // the first we don't add index number this save 1 char
       if (*str_idx=='0')
-        *str_idx='\0'; 
+        *str_idx='\0';
 
-      // Temperature, and have enought data ?
-      if (isDataTemp(data_type) && l>=sizeof(s_temp))
-      {
+      if (isDataTemp(data_type) && l>=sizeof(s_temp)) {
+        // Temperature, and have enought data ?
         pval = decode_temp(((s_temp*)pdat)->temp, str_idx);
         data_size = sizeof(s_temp);
-      }
-      // Humidity, and have enought data ?
-      else if (isDataHum(data_type) && l>=sizeof(s_hum))
-      {
+      } else if (isDataHum(data_type) && l>=sizeof(s_hum)) {
+        // Humidity, and have enought data ?
         pval = decode_hum(((s_hum*)pdat)->hum, str_idx);
         data_size = sizeof(s_hum);
-      }
-      // Luminosity and have enought data ?
-      else if (isDataLux(data_type) && l>=sizeof(s_lux))
-      {
+      } else if (isDataLux(data_type) && l>=sizeof(s_lux)) {
+        // Luminosity and have enought data ?
         pval =  decode_lux(((s_lux*)pdat)->lux, str_idx);
         data_size = sizeof(s_lux);
-      }
-      // CO2 and have enought data ?
-      else if (isDataCO2(data_type) && l>=sizeof(s_co2))
-      {
+      } else if (isDataCO2(data_type) && l>=sizeof(s_co2)) {
+        // CO2 and have enought data ?
         pval = decode_co2(((s_co2*)pdat)->co2, str_idx);
         data_size = sizeof(s_co2);
-      }
-      // voltage and have enought data ?
-      else if (isDataVolt(data_type) && l>=sizeof(s_volt))
-      {
+      } else if (isDataVolt(data_type) && l>=sizeof(s_volt)) {
+        // voltage and have enought data ?
         pval = decode_volt(((s_volt*)pdat)->volt, str_idx);
         data_size = sizeof(s_volt);
-      }
-      // battery (same payload as volt) and have enought data ?
-      else if (isDataBat(data_type) && l>=sizeof(s_volt))
-      {
+      }  else if (isDataBat(data_type) && l>=sizeof(s_volt)) {
+        // battery (same payload as volt) and have enought data ?
         pval = decode_bat(((s_volt*)pdat)->volt, str_idx);
         data_size = sizeof(s_volt);
-      }
-      // RSSI and have enought data ?
-      else if (isDataRSSI(data_type) && l>=sizeof(s_rssi))
-      {
+      } else if (isDataRSSI(data_type) && l>=sizeof(s_rssi)) {
+        // RSSI and have enought data ?
         pval =  decode_rssi(((s_rssi*)pdat)->rssi, str_idx);
         data_size = sizeof(s_rssi);
-      }
-      // counter and have enought data ?
-      else if (isDataCounter(data_type) && l>=sizeof(s_counter))
-      {
+      } else if (isDataCounter(data_type) && l>=sizeof(s_counter)) {
+        // counter and have enought data ?
         pval =  decode_counter(((s_counter*)pdat)->counter, str_idx);
         data_size = sizeof(s_counter);
-      }
-      // lowbat and have enought data ?
-      else if (isDataLowBat(data_type) && l>=sizeof(s_lowbat))
-      {
+      } else if (isDataLowBat(data_type) && l>=sizeof(s_lowbat)) {
+        // lowbat and have enought data ?
         pval =  decode_lowbat(((s_lowbat*)pdat)->lowbat, str_idx);
         data_size = sizeof(s_lowbat);
-      }
-      // Unknown data code, so we can't check data value
-      // nor size, so we decide to discard the 
-      // end of this frame
-      else
-      {
+      } else if (isDataDigitalIO(data_type) && l>=sizeof(s_io_digital)) {
+        // digital I/0
+        pval =  decode_digital_io(((s_io_digital*)pdat)->digital,
+                                  ((s_io_digital*)pdat)->code - RF_DAT_IO_DIGITAL);
+        data_size = sizeof(s_io_digital);
+      } else if (isDataAnalogIO(data_type) && l>=sizeof(s_io_analog)) {
+        // analog I/O
+        pval =  decode_analog_io(((s_io_analog*)pdat)->analog,
+                                 ((s_io_analog*)pdat)->code - RF_DAT_IO_ANALOG);
+        data_size = sizeof(s_io_analog);
+      } else {
+        // Unknown data code, so we can't check data value
+        // nor size, so we decide to discard the
+        // end of this frame
         ULPNP_DebugF("Parsing error");
         error = true;
       }
@@ -392,24 +495,20 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
       */
 
       // Something to add ?
-      if (!error && data_size && pval)
-      {
+      if (!error && data_size && pval) {
         // Add to JSon string
         add_json_data(json_str, pval);
 
         // remove data size we just worked on
-        l-= data_size;    
+        l-= data_size;
 
         // Rest some data after the code
-        if (l>=2)
-        {
+        if (l>=2) {
           pdat+=data_size; // Pointer to next data on buffer
           data_type=*pdat;         // get next data field
 
           //ULPNP_Debug(data_type,HEX);
-        }
-        else
-        {
+        } else {
           //ULPNP_DebugF("none");
         }
       }
@@ -419,12 +518,10 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
     } // while data
     while(l>1 && !error);
 
-  } // If sensor data
-  // not known data code, raw display packet
-  else
-  {
+  } else {
+    // not known data code, raw display packet
     uint8_t * p = (uint8_t *) ppayload;
-  
+
     // send raw values
     strcat(json_str, ", \"raw\":\"");
 

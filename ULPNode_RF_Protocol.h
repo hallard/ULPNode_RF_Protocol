@@ -5,12 +5,13 @@
 // You are free to use/extend this library but please abide with the CC-BY-SA license:
 // http://creativecommons.org/licenses/by-sa/4.0/
 //
-// For any explanation of ULPNode see 
+// For any explanation of ULPNode see
 // https://hallard.me/category/ulpnode/
 //
 // Written by Charles-Henri Hallard (http://hallard.me)
 //
 // History : V1.00 2014-07-14 - First release
+//         : V1.10 2015-09-03 - Added Particle Photon/Core targets
 //
 // All text above must be included in any redistribution.
 //
@@ -19,7 +20,12 @@
 #define ULPN_RF_PROTOCOL_H
 
 #ifdef SPARK
-#include <application.h>        // Spark Code main include file
+#include "application.h"    
+#define sprintf_P sprintf
+#define PSTR
+#endif
+#ifdef ARDUINO
+#include <arduino.h>        
 #endif
 
 // Payload command code
@@ -57,23 +63,23 @@
 #define RF_DAT_SENSOR_END		0x67 // last value for sensor payload type
 
 // Macro to determine valid payload of command or data
-#define isPayloadCommand(c)	(c>RF_PL_SYSTEM_START && c<RF_PL_SYSTEM_END) 
-#define isPayloadData(c)	  (c>RF_PL_DATA_START   && c<RF_PL_DATA_END) 
-#define isPayloadValid(c)	  (isPayloadCommand(c) || isPayloadData(c)) 
+#define isPayloadCommand(c)	(c>RF_PL_SYSTEM_START && c<RF_PL_SYSTEM_END)
+#define isPayloadData(c)	  (c>RF_PL_DATA_START   && c<RF_PL_DATA_END)
+#define isPayloadValid(c)	  (isPayloadCommand(c) || isPayloadData(c))
 
 // Macro to determine valid sensor data type
-#define isSensorData(c)    (c>RF_DAT_SENSOR_START   && c<RF_DAT_SENSOR_END) 
-#define isDataBat(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_BAT ) 
-#define isDataTemp(c)      ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_TEMP) 
-#define isDataHum(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_HUM )  
-#define isDataLux(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_LUX )  
-#define isDataCO2(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_CO2 )  
-#define isDataRSSI(c)      ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_RSSI)  
-#define isDataVolt(c)      ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_VOLT)  
-#define isDataCounter(c)   ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_COUNTER)  
-#define isDataLowBat(c)    ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_LOW_BAT)  
-#define isDataDigitalIO(c) ( c >= RF_DAT_IO_DIGITAL && c <= RF_DAT_IO_DIGITAL+16)  
-#define isDataAnalogIO(c)  ( c >= RF_DAT_IO_ANALOG && c <= RF_DAT_IO_ANALOG+7)  
+#define isSensorData(c)    (c>RF_DAT_SENSOR_START   && c<RF_DAT_SENSOR_END)
+#define isDataBat(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_BAT )
+#define isDataTemp(c)      ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_TEMP)
+#define isDataHum(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_HUM )
+#define isDataLux(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_LUX )
+#define isDataCO2(c)       ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_CO2 )
+#define isDataRSSI(c)      ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_RSSI)
+#define isDataVolt(c)      ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_VOLT)
+#define isDataCounter(c)   ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_COUNTER)
+#define isDataLowBat(c)    ( (c & RF_DAT_SENSOR_MASK) == RF_DAT_LOW_BAT)
+#define isDataDigitalIO(c) ( c >= RF_DAT_IO_DIGITAL && c <= RF_DAT_IO_DIGITAL+16)
+#define isDataAnalogIO(c)  ( c >= RF_DAT_IO_ANALOG && c <= RF_DAT_IO_ANALOG+7)
 
 // Application Parameters header flags of Radio Frame
 #define RF_PAYLOAD_REQ_ACK   0x01  // Request ACK FLAGS
@@ -110,10 +116,10 @@
   #pragma pack(1)     // set alignment to 1 byte boundary
   #define sprintf_P(s, f, ...) sprintf((s), (f), __VA_ARGS__)
   #define strstr_P(a, b) strstr((a), (b))
-#endif 
+#endif
 
-// Replace Serial.print primitive with debug one 
-// or empty if debug is not enabled, used for 
+// Replace Serial.print primitive with debug one
+// or empty if debug is not enabled, used for
 // external application that does not use ulpnode
 // object but just ULPNode RF protocol files
 #define ULPN_PROTO_DEBUG
@@ -125,11 +131,11 @@
   #define ULPNP_DebuglnF(s)       Serial.println(F(s))
   #define ULPNP_DebugFlush()      Serial.flush()
 #else
-  #define ULPNP_Debug(args...)      
-  #define ULPNP_Debugln(args...)    
-  #define ULPNP_DebugF(s)     
-  #define ULPNP_DebuglnF(s)   
-  #define ULPNP_DebugFlush()  
+  #define ULPNP_Debug(args...)
+  #define ULPNP_Debugln(args...)
+  #define ULPNP_DebugF(s)
+  #define ULPNP_DebuglnF(s)
+  #define ULPNP_DebugFlush()
 #endif
 
 // Command payloads type
@@ -156,90 +162,90 @@ typedef struct
 // Temperature format in payload
 typedef struct
 {
-  uint8_t code; // code         
-  int16_t temp; // temperature Value 
+  uint8_t code; // code
+  int16_t temp; // temperature Value
 } s_temp;
 
 // Humidity format in payload
 typedef struct
 {
-  uint8_t code;  // code         
-  uint16_t hum;  // humidity Value 
+  uint8_t code;  // code
+  uint16_t hum;  // humidity Value
 } s_hum;
 
 // Luminosity format in payload
 typedef struct
 {
-  uint8_t code;  // code         
-  uint16_t lux;   // Lux Value 
+  uint8_t code;  // code
+  uint16_t lux;   // Lux Value
 } s_lux;
 
 // CO2 format in payload
 typedef struct
 {
-  uint8_t code;  // code         
-  uint16_t co2;  // co2 Value   
+  uint8_t code;  // code
+  uint16_t co2;  // co2 Value
 } s_co2;
 
 // RSSI format in payload
 typedef struct
 {
-  uint8_t command;  // Command code         
-  int8_t  rssi;     // RSSI Value 
+  uint8_t command;  // Command code
+  int8_t  rssi;     // RSSI Value
 } s_rssi;
 
 // Voltage format in payload
 typedef struct
 {
-  uint8_t code;  // code         
+  uint8_t code;  // code
   uint16_t volt; // Voltage Value (in mv)
 } s_volt;
 
 // Counter format in payload
 typedef struct
 {
-  uint8_t code;     // code         
+  uint8_t code;     // code
   uint32_t counter; // counter data
 } s_counter;
 
 // lowbat format in payload
 typedef struct
 {
-  uint8_t code;   // code         
+  uint8_t code;   // code
   uint8_t lowbat; // lowbat indicator
 } s_lowbat;
 
 // IO Digital value
 typedef struct
 {
-  uint8_t code;    // code         
-  uint16_t analog; // d0-d16 Value (only D4/D8 could potentially by used on ULPNode)   
+  uint8_t code;     // code
+  uint16_t digital; // d0-d16 Value (only D4/D8 could potentially by used on ULPNode)
 } s_io_digital;
 
 // IO Analog Digital value
 typedef struct
 {
-  uint8_t code;    // code         
+  uint8_t code;    // code
   uint16_t analog; // a0-a7 Value (only A0,A1 and A3 free on ULPNode)
 } s_io_analog;
 
 // dhcp format in payload
 typedef struct
 {
-  uint8_t code;      // code         
+  uint8_t code;      // code
   uint8_t networkid; // network ID
   uint8_t nodeid;    // node ID
 } s_dhcp;
 
 
-// Dummy payload, used to be able to handle any possible payload 
-// with pointer, and allocating the max payload size, take care to 
+// Dummy payload, used to be able to handle any possible payload
+// with pointer, and allocating the max payload size, take care to
 // increase this payload size if you add some payload that can contains
 // more than 32 bytes on above definition
 typedef struct
 {
   uint8_t command;   /* Command code is ALWAYS 1st byte */
-  uint8_t dummy[31]; 
+  uint8_t dummy[31];
 } RFEmptyPayload;
 
 #ifdef SPARK
