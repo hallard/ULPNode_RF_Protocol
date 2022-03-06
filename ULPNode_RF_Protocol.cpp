@@ -5,6 +5,9 @@
 // You are free to use/extend this library but please abide with the CC-BY-SA license:
 // http://creativecommons.org/licenses/by-sa/4.0/
 //
+// For any explanation of ULPNode RF Protocol see
+// https://hallard.me/ulpnode-rf-protocol/
+//
 // For any explanation of ULPNode see
 // https://hallard.me/category/ulpnode/
 //
@@ -22,34 +25,7 @@
 #include <arduino.h>
 #endif
 
-#ifdef SPARK
-const char * rf_frame[] = {
-#else
-const char * const rf_frame[] PROGMEM = {
-#endif
-    // Payload command code (14 total) "x" are free
-    "UNKNOWN",    "ALIVE",      "PING",       "PINGBACK",
-    "OTA_CONFIG", "OTA_UPDATE", "DHCP",       "SYS_END",
-    "8",          "9",          "A",          "B",
-    "C",          "D",          "E",          "F" ,
-    // Payload DATA code (14 total) "x" are free
-    "DAT_START",  "DATA",       "DAT_END",    "3",
-    "4",          "5",          "6",          "7",
-    "8",          "9",          "A",          "B",
-    "C",          "D",          "E",          "F" ,
-  };
 
-/*
-#ifdef SPARK
-const char * rf_data[] = {
-#else
-const char * const rf_data[] PROGMEM = {
-#endif
-    "SYS00","SYS01","TEMP", "HUM",
-    "LUX",  "CO2",  "RSSI", "VOLT",
-    "BAT",  "COUNT", "ERR", "ERR"
-  };
-*/
 // Buffer used to decode specific data value
 char pbuf[24];
 
@@ -221,7 +197,7 @@ Input   : humidity (*10)
 ====================================================================== */
 char * decode_hum(uint16_t hum, char * index)
 {
-  sprintf_P(pbuf, PSTR("\"hum%s\":%d"), index, hum);
+  sprintf_P(pbuf, PSTR("\"hum%s\":"), index);
   #ifdef ARDUINO
     dtostrf(hum/10.0f, 4, 1,  pbuf+strlen(pbuf));
   #else
@@ -320,7 +296,7 @@ char * add_json_data(char * str, char * json)
 
   // Some checking on size, just in case
   if ( l + strlen(json) < sizeof(json_str))
-    sprintf_P(&str[l], PSTR(", %s"), json);
+    sprintf_P(&str[l], PSTR(",%s"), json);
 
   return str;
 }
@@ -329,7 +305,7 @@ char * add_json_data(char * str, char * json)
 Function: decode_frame_type
 Purpose : print the frame type
 Input   : type
-Output  : -
+Output  : string to decoded packet type name
 Comments: -
 ====================================================================== */
 char * decode_frame_type(uint8_t type)
@@ -338,11 +314,24 @@ char * decode_frame_type(uint8_t type)
   if (!isPayloadValid(type))
     type =0;
 
-  #ifdef SPARK
-    strcpy(pbuf, rf_frame[type]);
-  #else
-    strcpy(pbuf, (char*)pgm_read_word(&(rf_frame[type])));
-  #endif
+  if (type == RF_PL_ALIVE )             strcpy_P(pbuf, PSTR("ALIVE"));
+  else if (type == RF_PL_PING )         strcpy_P(pbuf, PSTR("PING"));
+  else if (type == RF_PL_PINGBACK )     strcpy_P(pbuf, PSTR("PINGBACK"));
+  else if (type == RF_PL_OTA_CONFIG )   strcpy_P(pbuf, PSTR("OTA_CONFIG"));
+  else if (type == RF_PL_OTA_UPDATE )   strcpy_P(pbuf, PSTR("OTA_UPDATE"));
+  else if (type == RF_PL_DHCP_REQUEST ) strcpy_P(pbuf, PSTR("DHCP_REQUEST"));
+  else if (type == RF_PL_DHCP_OFFER )   strcpy_P(pbuf, PSTR("DHCP_OFFER"));
+  else if (type == RF_PL_ACK )          strcpy_P(pbuf, PSTR("ACK"));
+  else if (type == RF_PL_SENSOR_DATA )  strcpy_P(pbuf, PSTR("DATA"));
+  else
+    strcpy_P(pbuf, PSTR("UNKNOWN"));
+
+  // I did not succeded to do better with array of flash string in Arduino
+  //#if defined(ARDUINO) && !defined(ESP8266)
+  //  strcpy_P(pbuf, (char*)pgm_read_word(&(rf_frame[type])));
+  //#else
+  //  strcpy_P(pbuf, PSTR(rf_frame[type]));
+  //#endif
 
   return pbuf;
 }
@@ -350,7 +339,7 @@ char * decode_frame_type(uint8_t type)
 /* ======================================================================
 Function: decode_received_data
 Purpose : send to serial received data in human format
-Input   : node id
+Input   : node id (0 if you don't want to have it into json string)
           rssi of data received
           size of data
           command of frame received
@@ -361,30 +350,28 @@ Comments: if we had a command and payload does not match
 ====================================================================== */
 uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c, uint8_t * ppayload)
 {
-  char *    pjson = json_str;
   uint8_t * pdat = ppayload;
-  char *    ptype ;
-
-  // Show packet type name
-  ptype = decode_frame_type(c);
 
   // Start our buffer string
-  //sprintf_P(json_str, PSTR("{\"id\":%d, \"type\":\"%s\", \"rssi\":%d"), nodeid, ptype, rssi);
-  sprintf_P(json_str, PSTR("{\"id\":%d, \"rssi\":%d"), nodeid, rssi);
+  if (nodeid)
+    sprintf_P(json_str, PSTR("{\"id\":%d,\"rssi\":%d"), nodeid, rssi);
+  else
+    sprintf_P(json_str, PSTR("{\"rssi\":%d"), rssi);
 
   // this is for known packet command
   // Alive packet ?
   if ( c==RF_PL_ALIVE && len==sizeof(RFAlivePayload)) {
-    sprintf_P(pbuf, PSTR("\"state\":%04X"), ((RFAlivePayload*)pdat)->status);
+    sprintf_P(pbuf, PSTR("\"state\":%d"), ((RFAlivePayload*)pdat)->status);
     add_json_data(json_str, pbuf);
-    add_json_data(json_str, decode_bat(((RFAlivePayload*)pdat)->vbat,""));
+    add_json_data(json_str, decode_bat(((RFAlivePayload*)pdat)->vbat, (char*)""));
+
+  // ping/ping back packet ?
   } else if ( (c==RF_PL_PING || c==RF_PL_PINGBACK) && len==sizeof(RFPingPayload)) {
-    // ping/ping back packet ?
-    sprintf_P(pbuf, PSTR("\"state\":%04X"), ((RFAlivePayload*)pdat)->status);
+    sprintf_P(pbuf, PSTR("\"state\":%d"), ((RFAlivePayload*)pdat)->status);
     add_json_data(json_str, pbuf);
     // Vbat is sent only on emiting ping packet, not ping back
     if (c==RF_PL_PING )
-      add_json_data(json_str, decode_bat(((RFPingPayload*)pdat)->vbat,""));
+      add_json_data(json_str, decode_bat(((RFPingPayload*)pdat)->vbat, (char*)""));
 
     // RSSI from other side is sent only in pingback response
     // this is the 2nd rssi value, we call it myrssi
@@ -392,12 +379,11 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
       sprintf_P(pbuf, PSTR("\"myrssi\":%d"), rssi);
       add_json_data(json_str, pbuf);
     }
-  }
   // payload Packet with datas
   // we need at least size of payload > 2
   // 1 payload command + 1 sensor type + 1 sensor data)
   // and is one of our known data code. This is for received data
-  else if ( isPayloadData(c) && len>2) {
+  } else if ( isPayloadData(c) && len>2) {
     uint8_t data_size ;
     uint8_t data_type ;
     uint8_t l ;
@@ -482,7 +468,7 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
         error = true;
       }
 
-/*
+      /*
       ULPNP_DebugF("[0x");
       ULPNP_Debug(data_type,HEX);
       ULPNP_DebugF("] -> l=");
@@ -505,25 +491,23 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
         // Rest some data after the code
         if (l>=2) {
           pdat+=data_size; // Pointer to next data on buffer
-          data_type=*pdat;         // get next data field
+          data_type=*pdat; // get next data field
 
           //ULPNP_Debug(data_type,HEX);
         } else {
           //ULPNP_DebugF("none");
         }
       }
-
       //ULPNP_Debugln();
-
     } // while data
     while(l>1 && !error);
 
+  // not known data code, raw display packet
   } else {
-    // not known data code, raw display packet
     uint8_t * p = (uint8_t *) ppayload;
 
     // send raw values
-    strcat(json_str, ", \"raw\":\"");
+    strcat(json_str, ",\"raw\":\"");
 
     // Add each received value
     while (len--)
@@ -538,7 +522,6 @@ uint8_t decode_received_data(uint8_t nodeid, int8_t rssi, uint8_t len, uint8_t c
 
   // End our buffer string
   strcat(json_str, "}");
-  ULPNP_Debug(json_str);
 
   return (c);
 }
